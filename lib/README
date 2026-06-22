@@ -1,0 +1,30 @@
+# TinyML Motion Recognition
+
+ESP32-based TinyML project focused on motion recognition using inertial sensors.
+
+## Current Status
+
+* ESP32 communication established
+* I2C communication verified
+* Unknown IMU detected at address 0x68
+* WHO_AM_I returns 0x72
+* Accelerometer data acquisition operational
+
+## Hardware
+
+* ESP32 DOIT DevKit V1
+* Unknown IMU (sold as MPU6050)
+
+## Project Roadmap
+
+1. Sensor characterization
+2. Noise analysis
+3. Signal filtering
+4. Dataset generation
+5. Feature extraction
+6. TinyML model development
+7. On-device inference
+
+## Documentation
+
+See `/docs` for technical reports and project notes.
