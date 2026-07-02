@@ -5,9 +5,6 @@ ImuOffset offset;
 ImuData data;
 
 void setup() {
-  // put your setup code here, to run once:
-  //int result = myFunction(2, 3);
-
     Serial.begin(115200);
     delay(2000);
 
@@ -22,7 +19,10 @@ void loop() {
 
     Serial.print("AX="); Serial.print(data.ax, 3);
     Serial.print(" AY="); Serial.print(data.ay, 3);
-    Serial.print(" AZ="); Serial.println(data.az, 3);
+    Serial.print(" AZ="); Serial.print(data.az, 3);
+    Serial.print(" | GX="); Serial.print(data.gx, 3);
+    Serial.print(" GY="); Serial.print(data.gy, 3);
+    Serial.print(" GZ="); Serial.println(data.gz, 3);
 
     delay(200);
 }

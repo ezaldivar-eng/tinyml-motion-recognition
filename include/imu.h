@@ -5,15 +5,19 @@
 #define IMU_ADDR 0x68
 
 // Accelerometer scale factor for ±2g range (default)
-// 16384 LSB/g — verify matches your sensor's register 0x1C default
 #define ACCEL_SCALE 16384.0f
+
+// Gyroscope scale factor for ±250°/s range (default)
+#define GYRO_SCALE 131.0f
 
 struct ImuData {
     float ax, ay, az; // m/s²
+    float gx, gy, gz; // °/s
 };
 
 struct ImuOffset {
     int16_t ax, ay, az;
+    int16_t gx, gy, gz;
 };
 
 void imu_init();

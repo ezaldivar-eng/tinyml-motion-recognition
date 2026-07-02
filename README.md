@@ -1,16 +1,18 @@
 # TinyML IMU Data Acquisition — ESP32
 
-Low-level IMU interface and raw accelerometer data acquisition pipeline on an ESP32 DOIT DevKit V1, built as the foundation for a TinyML motion classification project.
+Low-level IMU interface and full 6-axis calibrated data acquisition pipeline on an ESP32 DOIT DevKit V1, built as the foundation for a TinyML motion classification project.
 
-> **Status:** Phase 1 complete — hardware validated, raw accelerometer data streaming over serial.
+> **Status:** Phase 2 complete — 6-axis calibrated data streaming, modular firmware architecture.
 
 ---
 
 ## Overview
 
-This project establishes a direct I2C communication layer between an ESP32 and a commercially labeled MPU-6050 IMU module, **without relying on vendor libraries**. Hardware characterization revealed that the installed sensor is not a genuine MPU-6050 (WHO_AM_I = `0x72` instead of `0x68`), but is a pin-compatible replacement with an identical register layout. Full communication and data acquisition were validated at the register level.
+This project establishes a direct I2C communication layer between an ESP32 and a commercially labeled MPU-6050 IMU module, **without relying on vendor libraries**. Hardware characterization revealed that the installed sensor is not a genuine MPU-6050 (WHO_AM_I = `0x72` instead of `0x68`), but is a pin-compatible replacement with an identical register layout.
 
-The end goal of the broader project is on-device motion inference using TinyML models trained on datasets collected through this pipeline.
+Full 6-axis acquisition (accelerometer + gyroscope), offset calibration, and scale conversion to physical units (m/s² and °/s) have been validated. The firmware is modularized into separate hardware and application layers.
+
+The end goal is on-device motion inference using TinyML models trained on datasets collected through this pipeline.
 
 ---
 
@@ -39,13 +41,15 @@ The end goal of the broader project is on-device motion inference using TinyML m
 
 ```
 ├── src/
-│   └── main.cpp          # Main firmware
-├── include/              # Header files (PlatformIO default)
-├── lib/                  # Local libraries (PlatformIO default)
-├── test/                 # Unit tests (PlatformIO default)
+│   ├── main.cpp          # Main firmware — init and read loop
+│   └── imu.cpp           # IMU hardware logic
+├── include/
+│   └── imu.h             # IMU public interface
+├── tools/
+│   └── i2c_scan.cpp      # Standalone I2C bus diagnostic
 ├── docs/
-│   ├── TR-001.docx       # Technical Report 001 — Hardware Characterization
-│   └── TR-001.md         # Technical Report 001 — Markdown version
+│   ├── TR-001.docx       # Technical Report 001
+│   └── TR-001.md         # Technical Report 001 (Markdown)
 ├── platformio.ini
 └── README.md
 ```
@@ -59,10 +63,16 @@ The end goal of the broader project is on-device motion inference using TinyML m
 - ESP32 DOIT DevKit V1
 - IMU module wired as described above
 
-**Build and flash:**
+**Build and flash (main firmware):**
 
 ```bash
-pio run --target upload
+pio run -e esp32doit-devkit-v1 --target upload
+```
+
+**Run I2C bus scan:**
+
+```bash
+pio run -e i2c-scan --target upload
 ```
 
 **Monitor serial output:**
@@ -77,39 +87,42 @@ Baud rate: `115200`
 
 ## Firmware Description
 
-The firmware (`src/main.cpp`) performs the following:
+On boot, the firmware:
 
 1. Initializes I2C on GPIO21 (SDA) and GPIO22 (SCL).
 2. Wakes the sensor by writing `0x00` to the power management register (`0x6B`).
-3. Reads identification registers (`WHO_AM_I`, `0x47`, `0x00`) and prints them over serial.
-4. Continuously reads the raw accelerometer output registers (`0x3B`–`0x40`) and streams AX, AY, AZ values at ~5 Hz.
+3. Reads and prints identification and configuration registers (WHO_AM_I, ACCEL_CONFIG, GYRO_CONFIG).
+4. Runs a 200-sample offset calibration routine — **keep sensor still during this phase**.
+5. Continuously reads and streams calibrated AX, AY, AZ (m/s²) and GX, GY, GZ (°/s) at ~5 Hz.
 
 No external IMU library is used. All register access is handled directly via the Arduino `Wire` library.
 
 **Expected serial output on boot:**
 
 ```
-=== Identificacion del sensor ===
 WHO_AM_I (0x75): 0x72
-REG 0x47:        0x??
-REG 0x00:        0x??
-=================================
+ACCEL_CONFIG (0x1C): 0x0
+GYRO_CONFIG (0x1B): 0x0
+Calibrating — keep sensor still...
+Offset AX=-1411 AY=467 AZ=1261
+Offset GX=185 GY=355 GZ=-103
+Calibration done.
 Sensor listo
-AX=-1876 AY=524 AZ=17556
-AX=-1881 AY=519 AZ=17603
+AX=-0.002 AY=-0.014 AZ=9.778 | GX=0.099 GY=-0.092 GZ=0.053
 ...
 ```
 
 ---
 
-## Key Findings (Phase 1)
+## Key Findings
 
-- The sensor responds at I2C address `0x68` but returns `WHO_AM_I = 0x72`, indicating it is not a genuine MPU-6050.
-- Despite this, the register map is compatible: power management, WHO_AM_I, and accelerometer output registers behave as expected.
-- Stationary noise observed: AX ≈ −1900 ± 100, AY ≈ 500 ± 70, AZ ≈ 17600 ± 150.
-- No communication instability detected.
+- The sensor responds at I2C address `0x68` but returns WHO_AM_I = `0x72` — not a genuine MPU-6050.
+- ACCEL_CONFIG and GYRO_CONFIG default to `0x00`: ±2g and ±250°/s ranges confirmed.
+- Scale factors: 16384 LSB/g (accelerometer), 131 LSB/°/s (gyroscope).
+- Calibrated output at rest: AX ≈ AY ≈ 0 m/s², AZ ≈ 9.81 m/s², GX ≈ GY ≈ GZ ≈ 0 °/s.
+- Accelerometer noise: ±0.06 m/s². Gyroscope noise: ±0.35 °/s (unfiltered).
 
-Full methodology documented in [`docs/TR-001.md`](docs/TR-001.md).
+Full methodology in [`docs/TR-001.md`](docs/TR-001.md).
 
 ---
 
@@ -119,10 +132,15 @@ Full methodology documented in [`docs/TR-001.md`](docs/TR-001.md).
 - [x] Register read/write confirmed
 - [x] Sensor wake-up sequence implemented
 - [x] Raw accelerometer data streaming
-- [ ] Identify exact IMU model (gyroscope register mapping)
-- [ ] Gyroscope data acquisition
-- [ ] Sensor calibration and offset correction
-- [ ] Noise analysis and digital filtering
+- [x] Gyroscope register characterization
+- [x] Full 6-axis data acquisition
+- [x] Offset calibration
+- [x] Scale conversion to physical units (m/s², °/s)
+- [x] Firmware modularization (imu.h / imu.cpp)
+- [x] I2C diagnostic tool (tools/i2c_scan.cpp)
+- [ ] Digital filtering (complementary filter)
+- [ ] Roll/pitch orientation estimation
+- [ ] OLED display integration (pending replacement hardware)
 - [ ] Dataset collection framework
 - [ ] Feature extraction pipeline
 - [ ] TinyML model training
@@ -134,7 +152,7 @@ Full methodology documented in [`docs/TR-001.md`](docs/TR-001.md).
 
 | Document | Description |
 |---|---|
-| [TR-001](docs/TR-001.md) | Hardware characterization and low-level interface validation |
+| [TR-001](docs/TR-001.md) | Hardware characterization, firmware modularization, and 6-axis acquisition — Phases 1 & 2 |
 
 ---
 
