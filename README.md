@@ -1,8 +1,8 @@
 # TinyML IMU Data Acquisition — ESP32
 
-Low-level IMU interface and full 6-axis calibrated data acquisition pipeline on an ESP32 DOIT DevKit V1, built as the foundation for a TinyML motion classification project.
+Low-level IMU interface, full 6-axis calibrated data acquisition, and orientation estimation pipeline on an ESP32 DOIT DevKit V1, built as the foundation for a TinyML motion classification project.
 
-> **Status:** Phase 2 complete — 6-axis calibrated data streaming, modular firmware architecture.
+> **Status:** Phase 3 complete — complementary filter implemented, roll/pitch estimation operational.
 
 ---
 
@@ -10,7 +10,7 @@ Low-level IMU interface and full 6-axis calibrated data acquisition pipeline on 
 
 This project establishes a direct I2C communication layer between an ESP32 and a commercially labeled MPU-6050 IMU module, **without relying on vendor libraries**. Hardware characterization revealed that the installed sensor is not a genuine MPU-6050 (WHO_AM_I = `0x72` instead of `0x68`), but is a pin-compatible replacement with an identical register layout.
 
-Full 6-axis acquisition (accelerometer + gyroscope), offset calibration, and scale conversion to physical units (m/s² and °/s) have been validated. The firmware is modularized into separate hardware and application layers.
+Full 6-axis acquisition (accelerometer + gyroscope), offset calibration, scale conversion to physical units (m/s² and °/s), and orientation estimation via complementary filter have been validated. The firmware is modularized into separate hardware and application layers.
 
 The end goal is on-device motion inference using TinyML models trained on datasets collected through this pipeline.
 
@@ -42,13 +42,15 @@ The end goal is on-device motion inference using TinyML models trained on datase
 ```
 ├── src/
 │   ├── main.cpp          # Main firmware — init and read loop
-│   └── imu.cpp           # IMU hardware logic
+│   ├── imu.cpp           # IMU hardware logic
+│   └── filter.cpp        # Complementary filter implementation
 ├── include/
-│   └── imu.h             # IMU public interface
+│   ├── imu.h             # IMU public interface
+│   └── filter.h          # Filter public interface and Orientation struct
 ├── tools/
 │   └── i2c_scan.cpp      # Standalone I2C bus diagnostic
 ├── docs/
-│   ├── TR-001.docx       # Technical Report 001
+│   ├── TR-001.pdf        # Technical Report 001
 │   └── TR-001.md         # Technical Report 001 (Markdown)
 ├── platformio.ini
 └── README.md
@@ -93,7 +95,8 @@ On boot, the firmware:
 2. Wakes the sensor by writing `0x00` to the power management register (`0x6B`).
 3. Reads and prints identification and configuration registers (WHO_AM_I, ACCEL_CONFIG, GYRO_CONFIG).
 4. Runs a 200-sample offset calibration routine — **keep sensor still during this phase**.
-5. Continuously reads and streams calibrated AX, AY, AZ (m/s²) and GX, GY, GZ (°/s) at ~5 Hz.
+5. Initializes the complementary filter with alpha = 0.98.
+6. Continuously reads calibrated AX, AY, AZ (m/s²), GX, GY, GZ (°/s), and estimated Roll/Pitch (°) at ~5 Hz.
 
 No external IMU library is used. All register access is handled directly via the Arduino `Wire` library.
 
@@ -108,9 +111,27 @@ Offset AX=-1411 AY=467 AZ=1261
 Offset GX=185 GY=355 GZ=-103
 Calibration done.
 Sensor listo
-AX=-0.002 AY=-0.014 AZ=9.778 | GX=0.099 GY=-0.092 GZ=0.053
+AX=0.002 AY=0.001 AZ=9.897 | GX=0.069 GY=0.137 GZ=0.015 | Roll=0.00 Pitch=-0.00
 ...
 ```
+
+---
+
+## Complementary Filter
+
+Orientation is estimated by fusing accelerometer and gyroscope data:
+
+```
+orientation = alpha * gyroscope_integration + (1 - alpha) * accelerometer_angle
+```
+
+With alpha = 0.98:
+- The gyroscope contributes 98% — smooth, responsive to motion.
+- The accelerometer contributes 2% — corrects gyroscope drift over time.
+
+Roll and pitch are estimated in degrees. Yaw is excluded (requires magnetometer).
+
+**Verified at rest:** Roll/Pitch within ±0.35°.
 
 ---
 
@@ -120,7 +141,7 @@ AX=-0.002 AY=-0.014 AZ=9.778 | GX=0.099 GY=-0.092 GZ=0.053
 - ACCEL_CONFIG and GYRO_CONFIG default to `0x00`: ±2g and ±250°/s ranges confirmed.
 - Scale factors: 16384 LSB/g (accelerometer), 131 LSB/°/s (gyroscope).
 - Calibrated output at rest: AX ≈ AY ≈ 0 m/s², AZ ≈ 9.81 m/s², GX ≈ GY ≈ GZ ≈ 0 °/s.
-- Accelerometer noise: ±0.06 m/s². Gyroscope noise: ±0.35 °/s (unfiltered).
+- Complementary filter noise at rest: ±0.35°.
 
 Full methodology in [`docs/TR-001.md`](docs/TR-001.md).
 
@@ -138,8 +159,8 @@ Full methodology in [`docs/TR-001.md`](docs/TR-001.md).
 - [x] Scale conversion to physical units (m/s², °/s)
 - [x] Firmware modularization (imu.h / imu.cpp)
 - [x] I2C diagnostic tool (tools/i2c_scan.cpp)
-- [ ] Digital filtering (complementary filter)
-- [ ] Roll/pitch orientation estimation
+- [x] Digital filtering (complementary filter)
+- [x] Roll/pitch orientation estimation
 - [ ] OLED display integration (pending replacement hardware)
 - [ ] Dataset collection framework
 - [ ] Feature extraction pipeline
@@ -152,7 +173,7 @@ Full methodology in [`docs/TR-001.md`](docs/TR-001.md).
 
 | Document | Description |
 |---|---|
-| [TR-001](docs/TR-001.md) | Hardware characterization, firmware modularization, and 6-axis acquisition — Phases 1 & 2 |
+| [TR-001](docs/TR-001.md) | Hardware characterization, firmware modularization, 6-axis acquisition, and complementary filter — Phases 1–3 |
 
 ---
 
