@@ -1,11 +1,11 @@
 #include <Arduino.h>
 #include "imu.h"
 #include "filter.h"
+#include "collector.h"
 
 ImuOffset offset;
 ImuData data;
 Orientation orientation;
-
 unsigned long lastTime = 0;
 
 void setup() {
@@ -15,12 +15,11 @@ void setup() {
     imu_init();
     imu_calibrate(offset);
     filter_init(0.98f);
+    collector_init();
 
     orientation.roll  = 0.0f;
     orientation.pitch = 0.0f;
-
     lastTime = millis();
-    Serial.println("Sensor listo");
 }
 
 void loop() {
@@ -28,18 +27,14 @@ void loop() {
     float dt = (now - lastTime) / 1000.0f;
     lastTime = now;
 
+    collector_check_command();
+
     imu_read(data, offset);
     filter_update(orientation, data.ax, data.ay, data.az,
                                data.gx, data.gy, data.gz, dt);
 
-    Serial.print("AX="); Serial.print(data.ax, 3);
-    Serial.print(" AY="); Serial.print(data.ay, 3);
-    Serial.print(" AZ="); Serial.print(data.az, 3);
-    Serial.print(" | GX="); Serial.print(data.gx, 3);
-    Serial.print(" GY="); Serial.print(data.gy, 3);
-    Serial.print(" GZ="); Serial.print(data.gz, 3);
-    Serial.print(" | Roll="); Serial.print(orientation.roll, 2);
-    Serial.print(" Pitch="); Serial.println(orientation.pitch, 2);
+    collector_add_sample(data.ax, data.ay, data.az,
+                         data.gx, data.gy, data.gz);
 
-    delay(200);
+    delay(SAMPLE_DELAY);
 }
