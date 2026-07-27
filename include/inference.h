@@ -29,3 +29,10 @@ GestureClass inference_last_result();
 // model's int8 output by the MicroTFLite library itself. Useful for
 // debug/logging, not critical for the gesture logic itself.
 float inference_last_confidence();
+
+// True exactly once per newly completed window classification.
+// Calling this consumes (clears) the flag — call it once per loop, and
+// only act on inference_last_result() when this returns true. Without
+// this, the same classification would be re-read on every loop iteration
+// (every ~20ms) for the entire ~1s window duration.
+bool inference_has_new_result();

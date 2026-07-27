@@ -26,6 +26,11 @@ int g_sample_count = 0;
 GestureClass g_last_result = GestureClass::UNKNOWN;
 float g_last_confidence = 0.0f;
 
+// True from the moment a window finishes classifying until the main loop
+// consumes it via inference_has_new_result(). Prevents the same result
+// from being acted on repeatedly while it's held between windows.
+bool g_new_result = false;
+
 float mean_of(const float* buf, int n) {
     float sum = 0.0f;
     for (int i = 0; i < n; i++) sum += buf[i];
@@ -88,6 +93,7 @@ void run_inference_on_window() {
 
     g_last_confidence = best_val;
     g_last_result = static_cast<GestureClass>(best_idx);
+    g_new_result = true;  // signal: this is a fresh classification
 }
 
 }  // namespace
@@ -121,4 +127,10 @@ GestureClass inference_last_result() {
 
 float inference_last_confidence() {
     return g_last_confidence;
+}
+
+bool inference_has_new_result() {
+    bool r = g_new_result;
+    g_new_result = false;
+    return r;
 }
